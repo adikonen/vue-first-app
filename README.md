@@ -22,9 +22,7 @@ npm install
 npm run dev
 ```
 
-### Compile and Minify for Production
-
+### Run PHP For API
 ```sh
-npm run build
+php -S localhost:80
 ```
-
