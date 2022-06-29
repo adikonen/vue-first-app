@@ -65,7 +65,7 @@ const pushFruit = (
         headers: {"Content-type": "application/json; charset=UTF-8"}
     },
     url = 'http://localhost/backend/', 
-) => method === "POST" ? await axios.post(url, body, conf) : await axios.put(url,body,conf) ;
+) => method === "POST" ?  axios.post(url, body, conf) :  axios.put(url,body,conf) ;
         
 
 //deklarasi variabel
