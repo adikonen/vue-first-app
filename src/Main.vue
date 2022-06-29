@@ -1,21 +1,11 @@
 <script setup>
+import { reactive, ref, watch, computed, inject } from 'vue';
 
-/*
-TODO 1 
-BUAT LAH SEBUAH TABEL YANG BERISIKAN SEBUAH DATA DATA DARI BUAH
-
-TODO 2 
-BUATLAH SEBUAH VALIDASI REALTIME JIKA NAMA BUAH SUDAH ADA / INPUT KOSONG
-
-TODO 3 
-BUATLAH CRUD
-
-TODO 4
-BUAT LAH SEBUAH FILTER DATA BUAH
-
-
-*/
-import { reactive, ref, watch, computed, onMounted } from 'vue';
+//main var
+const axios = inject('axios');  
+const inputName = ref('');
+const inputPrice = ref('');
+const fruits = ref([]);
 
 //helper func
 const insert = (str, insertedStr, pos) => {
@@ -39,52 +29,71 @@ const toDigitString = (str) => {
 }
 const toNormalString = (str) => str.split('.').join('');
 
-const setSuccessAlert = (msg) => {
-    show.fail.work = false;
-    show.fail.message = '';
-    show.fail.errors = [];
-    show.success.work = true;
-    show.success.message = msg;
+const setSuccessAlert = (alertObj,msg) => {
+    alertObj.fail.work = false;
+    alertObj.fail.message = '';
+    alertObj.fail.errors = [];
+    alertObj.success.work = true;
+    alertObj.success.message = msg;
 }
 
-const setFailAlert = (...msg) => {
-    show.success.work = false;
-    show.success.message = '';
-    show.fail.work = true;
-    show.fail.message = [...msg];
+const setFailAlert = (alertObj, ...msg) => {
+    alertObj.success.work = false;
+    alertObj.success.message = '';
+    alertObj.fail.work = true;
+    alertObj.fail.message = [...msg];
 }
 
-const getData = async(url) => {
-    const raw = await fetch(url);
-    const data = await raw.json();
-    return data;
+const loadFruitData = (axios, url = 'http://localhost/backend/') => {
+    axios.get(url)
+        .then(response => fruits.value = response.data,
+        reject => {
+            console.log(reject.message)
+            setFailAlert(show, 'oops sepertinya backend sedang ada masalah!')
+        });
 }
+
+const pushFruit = ( 
+    //parameter 
+    axios,
+    method = 'POST',
+    body = {
+        name: inputName.value,
+        price: inputPrice.value
+    }, 
+    conf = {
+        headers: {"Content-type": "application/json; charset=UTF-8"}
+    },
+    url = 'http://localhost/backend/', 
+) => method === "POST" ? await axios.post(url, body, conf) : await axios.put(url,body,conf) ;
+        
 
 //deklarasi variabel
-onMounted(() => {
-console.log(getData('http://localhost/backend/'))
-    
-});
-
-const fruits = ref([]);
+loadFruitData(axios);
 
 const myFruits = computed( () => {
-    const result = fruits.value.map(fruit => {
-        let price = toDigitString(fruit.price);
-        return {name: fruit.name, price: `${price}`}
-    });
-
+    let result = [];
+    
+    if(fruits.value != null)
+    {
+        result = fruits.value.map(fruit => {
+            let price = toDigitString(fruit.price);
+            return {name: fruit.name, price: `${price}`}
+        });
+    } 
     return result;
 })
 
 const show = reactive({
     save:false, 
-    success: {work: false, message: ''}, 
-    fail: {work: false, message: []}
+    success: {work: false, message: '', title: 'Berhasil'}, 
+    fail: {
+        work: false,
+        message: [], 
+        title: 'Kesalahan',
+    }
 });
 
-const inputName = ref('');
-const inputPrice = ref('');
 
 
 //validasi register
@@ -100,11 +109,11 @@ watch(inputPrice, (price) => {
 });
 
 //register
-const register = () => {
+const register =  () => {
 
     if(inputName.value.length === 0 || inputPrice.value.length === 0 )
     {
-        return setFailAlert('input nama atau harga tidak boleh kosong')
+        return setFailAlert(show,'input nama atau harga tidak boleh kosong')
     }  
     //menghapus spasi di awal kata
     let data = inputName.value.trim();
@@ -113,14 +122,21 @@ const register = () => {
     for(let f of fruits.value){
         if(f.name === data)
         {
-            return alert(`nama dari ${data} sudah ada`)
+            alert(`nama dari ${data} sudah ada`);
+            return setFailAlert(show,`nama dari ${data} sudah ada`);
         }
     }
 
     //memasukan nama buah
     fruits.value.push({name: inputName.value, price: `${inputPrice.value}`});
+
+    //menyetor ke database
+  
+    pushFruit(axios)
+        .then( () => setSuccessAlert(show,`Berhasil menambahkan ${data} ke ruang penyimpanan!`))
+        .catch( () =>  setFailAlert(show, 'Sepertinya ada kesalahan teknis pada backend, data tidak tersimpan pada penyimpanan!'))    
+
     resetInput();
-    return setSuccessAlert(`Berhasil menambahkan ${data} ke ruang penyimpanan!`);
 }
 
 const resetInput = () => {
@@ -130,22 +146,84 @@ const resetInput = () => {
 
 //simpan perubahan
 
-const saveChanges = () => {
+const saveChanges =  () => {
+    let price, name, no;
+    const changes = [];
+    show.fail.work = false;
+    show.fail.message = [];
     const editedNames = document.getElementsByClassName("fruit-name");
     const editedPrices = document.getElementsByClassName("fruit-price"); 
-
+    const error = {
+        names : new Map(),
+        price: new Map()
+    }
     for(let i = 0; i < editedNames.length; i++) 
     {
-        fruits.value[i].name = editedNames[i].innerText;
-        fruits.value[i].price =  toNormalString(editedPrices[i].innerText);
+        name = editedNames[i].innerText.trim();
+        price =  toNormalString(editedPrices[i].innerText).trim();
+        no = i+1;
+
+        if(name.length === 0){
+            error.names.set(i,`Field Nama pada nomor ${no} tidak boleh kosong!`);
+        }
+        //kalo if bernilai false, maka kode dibawah akan di esekusi
+        else if(error.names.has(i)){
+            error.names.delete(i);
+        }
+
+        if(price.length === 0){
+            error.price.set(i, `Field Harga pada tabel nomor ${no} tidak boleh kosong!`);
+        }
+        else if(isNaN(price)){
+            error.price.set(i, `Field Harga pada table nomor ${no} harus angka tidak boleh ada huruf!`)
+        }
+        else if(error.price.has(i)){
+            error.price.delete(i);
+        }
+
+        //memilah buah apa saja yang telah diedit
+        if(name !== fruits.value[i].name || price !== fruits.value[i].price){
+            changes.push({
+                newName: name,
+                name: fruits.value[i].name,
+                newPrice: price,
+                price: fruits.value[i].price
+            });
+        }
+     
+        
     }
+    //kalo tidak ada error, nilainya harus disimpan
+    if(error.names.size === 0 && error.price.size === 0)
+    {
+        console.log('yeay');
+        console.log(changes)
+        for(let i = 0; i < editedNames.length; i++)
+        {
+            fruits.value[i].name = editedNames[i].innerText.trim();
+            fruits.value[i].price = toNormalString(editedPrices[i].innerText).trim();
+        }
+        show.save = false;
+        pushFruit(axios, 'PUT', changes)
+            .then(() => setSuccessAlert(show, "seluruh data berhasil terupdate!"))
+            .catch(() => setFailAlert(show, "oops sepertinya terdapat masalah pada backend! seluruh data tidak terupdate di penyimpanan")); 
+    }
+    else {
+        error.names.forEach(name => show.fail.message.push(name));
+        error.price.forEach(price => show.fail.message.push(price));
+
+        show.fail.work = true;   
+    }
+    
 }
 
-//validasi edit
 //delete
-const destroy = (index) => {
+const destroy =  (index) => {
     let [trash] = fruits.value.splice(index, 1);
-    setSuccessAlert(`Berhasil menghapus data ${trash.name}`);
+    
+    axios.delete("http://localhost/backend", {data: trash})
+         .then(() => setSuccessAlert(show, `Berhasil menghapus ${trash.name}`))
+         .catch(() => setFailAlert(show, "Oopps mungkin terjadi kesalahan pada backend! Gagal untuk menghapus"));
 }
 </script>
 
@@ -153,8 +231,8 @@ const destroy = (index) => {
 <template>
     <div class="container">
         <div v-if="show.fail.work" class="alert alert-danger">
-            <h3>Gagal!</h3>
-            <ul v-for="error in show.fail.message">
+            <h3>Kesalahan</h3>
+            <ul v-for="error in show.fail.message"> 
                 <li class="my-0">{{ error }}</li>
             </ul>
         </div>
@@ -162,6 +240,7 @@ const destroy = (index) => {
             <h3>Berhasil!</h3>
             <p>{{ show.success.message }}</p>
         </div>
+        <h3 class="my-3">List Nama - Nama buah Terdaftar</h3>
         <table class="table text-center">
             <thead>
                 <th>No</th>
@@ -218,6 +297,7 @@ const destroy = (index) => {
             </div>
         </form>
     </div>
+    
 </template>
 
 <style scoped>
